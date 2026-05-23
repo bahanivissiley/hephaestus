@@ -1,17 +1,14 @@
-import httpx
 import asyncio
+from app.tools.weather_tool import weather_tool
+from app.tools.destination_tool import destination_info_tool
 
 async def test():
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        r = await client.post(
-            'http://ollama:11434/api/generate',
-            json={
-                'model': 'qwen3:1.7b',
-                'prompt': 'bonjour',
-                'stream': False
-            }
-        )
-        print("Status:", r.status_code)
-        print("Response:", r.json())
+    print("=== TEST WEATHER TOOL ===")
+    result = await weather_tool("Tokyo")
+    print(result)
+    
+    print("\n=== TEST DESTINATION TOOL ===")
+    result2 = await destination_info_tool("Tokyo")
+    print(result2)
 
 asyncio.run(test())
