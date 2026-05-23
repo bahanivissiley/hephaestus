@@ -6,9 +6,7 @@ services:
     volumes:
       - ./backend:/app
     environment:
-      - OLLAMA_HOST=http://ollama:11434
-    depends_on:
-      - ollama
+      - OLLAMA_HOST=http://host.docker.internal:11434
 
   frontend:
     build: ./frontend
@@ -16,13 +14,3 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend/src:/app/src
-
-  ollama:
-    image: ollama/ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-
-volumes:
-  ollama_data:
