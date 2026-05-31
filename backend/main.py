@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import health, chat
 from app.database.connection import init_db
+from app.routers import health, chat, destinations, places
 
 
 
@@ -20,9 +21,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 app.include_router(health.router)
 app.include_router(chat.router)
+app.include_router(destinations.router)
+app.include_router(places.router)
 
 @app.get("/")
 async def root():
