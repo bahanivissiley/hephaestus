@@ -1,6 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import health, chat
+from app.database.connection import init_db
+
+
 
 
 app = FastAPI(
@@ -26,3 +29,4 @@ async def root():
     return {"message": "TravelMind AI is running 🚀"}
 
 
+init_db()

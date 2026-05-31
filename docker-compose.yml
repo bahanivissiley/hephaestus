@@ -7,6 +7,10 @@ services:
       - ./backend:/app
     environment:
       - OLLAMA_HOST=http://host.docker.internal:11434
+      - DATABASE_URL=postgresql://travelmind:travelmind123@db:5432/travelmind
+    depends_on:
+      db:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -14,3 +18,23 @@ services:
       - "5173:5173"
     volumes:
       - ./frontend/src:/app/src
+
+  db:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=travelmind
+      - POSTGRES_PASSWORD=travelmind123
+      - POSTGRES_DB=travelmind
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travelmind -d travelmind"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  postgres_data:

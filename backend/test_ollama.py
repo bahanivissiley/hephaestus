@@ -1,14 +1,14 @@
 import asyncio
-from app.tools.weather_tool import weather_tool
-from app.tools.destination_tool import destination_info_tool
+from app.tools.hotel_tool import hotel_search_tool
+from app.tools.flight_tool import flight_search_tool
 
 async def test():
-    print("=== TEST WEATHER TOOL ===")
-    result = await weather_tool("Tokyo")
+    print("=== TEST HOTEL TOOL ===")
+    result = await hotel_search_tool("Tokyo")
     print(result)
     
-    print("\n=== TEST DESTINATION TOOL ===")
-    result2 = await destination_info_tool("Tokyo")
+    print("\n=== TEST FLIGHT TOOL ===")
+    result2 = await flight_search_tool("Tokyo", origin="Paris")
     print(result2)
 
 asyncio.run(test())
