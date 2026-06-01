@@ -1,14 +1,18 @@
 import asyncio
-from app.tools.hotel_tool import hotel_search_tool
-from app.tools.flight_tool import flight_search_tool
+from app.tools.attraction_tool import attraction_tool
+from app.tools.restaurant_tool import restaurant_tool
 
 async def test():
-    print("=== TEST HOTEL TOOL ===")
-    result = await hotel_search_tool("Tokyo")
-    print(result)
-    
-    print("\n=== TEST FLIGHT TOOL ===")
-    result2 = await flight_search_tool("Tokyo", origin="Paris")
-    print(result2)
+    print("=== TEST ATTRACTION TOOL ===")
+    result = await attraction_tool("Tokyo")
+    print(f"Source: {result['source']}, Count: {result['count']}")
+    for a in result['attractions'][:2]:
+        print(f"  - {a['name']} ({a['category']})")
+
+    print("\n=== TEST RESTAURANT TOOL ===")
+    result2 = await restaurant_tool("Tokyo")
+    print(f"Source: {result2['source']}, Count: {result2['count']}")
+    for r in result2['restaurants'][:2]:
+        print(f"  - {r['name']} ({r['cuisine']})")
 
 asyncio.run(test())

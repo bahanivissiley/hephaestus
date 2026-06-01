@@ -48,3 +48,33 @@ async def chat(messages: list[dict], system: str = "") -> str:
             raise Exception(f"Ollama error: {data['error']}")
         else:
             raise Exception(f"Format de réponse inattendu: {data}")
+        
+
+def truncate_history(history: list[dict], max_tokens: int = 3000) -> list[dict]:
+    """
+    Tronque l'historique de conversation pour ne pas dépasser le contexte du LLM.
+    Garde toujours le premier message (contexte voyage) et les plus récents.
+    """
+    if not history:
+        return []
+    
+    # Estimation grossière : 1 token ≈ 4 caractères
+    def estimate_tokens(messages: list[dict]) -> int:
+        total = sum(len(m.get("content", "")) for m in messages)
+        return total // 4
+    
+    if estimate_tokens(history) <= max_tokens:
+        return history
+    
+    # Garder le premier message (contexte initial) + les plus récents
+    if len(history) <= 2:
+        return history
+    
+    first_message = history[0]
+    recent_messages = history[1:]
+    
+    # Supprimer les messages les plus anciens jusqu'à rentrer dans le contexte
+    while len(recent_messages) > 2 and estimate_tokens([first_message] + recent_messages) > max_tokens:
+        recent_messages = recent_messages[2:]  # Supprimer par paire user/assistant
+    
+    return [first_message] + recent_messages
