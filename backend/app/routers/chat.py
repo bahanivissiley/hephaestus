@@ -95,3 +95,43 @@ async def chat_endpoint(request: ChatRequest):
         tools_used=result["tools_used"],
         itinerary=itinerary
     )
+
+
+class AlternativeRequest(BaseModel):
+    place_type: str
+    current_place: str
+    destination: str
+    budget_max: int | None = None
+
+@router.post("/alternative")
+async def get_alternative(request: AlternativeRequest):
+    from app.services.db_service import get_hotels, get_attractions, get_restaurants
+    
+    if request.place_type == "hotel":
+        places = get_hotels(request.destination, budget_max=request.budget_max)
+        alternatives = [p for p in places if p["name"] != request.current_place]
+    
+    elif request.place_type == "attraction":
+        places = get_attractions(request.destination)
+        alternatives = [p for p in places if p["name"] != request.current_place]
+    
+    elif request.place_type == "restaurant":
+        places = get_restaurants(request.destination)
+        alternatives = [p for p in places if p["name"] != request.current_place]
+    
+    else:
+        return {"error": "Type non supporté", "alternative": None}
+    
+    if not alternatives:
+        return {
+            "alternative": None,
+            "place_type": request.place_type,
+            "message": f"Aucune alternative disponible pour {request.current_place}"
+        }
+    
+    best = alternatives[0]
+    return {
+        "alternative": best,
+        "place_type": request.place_type,
+        "message": f"Alternative proposée : {best['name']}"
+    }
