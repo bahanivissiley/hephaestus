@@ -9,7 +9,7 @@ from app.routers import health, chat, destinations, places
 
 app = FastAPI(
     title="TravelMind AI",
-    description="Agent de voyage intelligent — Epitech Hephaestus",
+    description="Agent de voyage intelligent - Epitech Hephaestus",
     version="1.0.0"
 )
 
