@@ -9,6 +9,7 @@ services:
       - ./backend/.env
     environment:
       - OLLAMA_HOST=http://host.docker.internal:11434
+      - OLLAMA_CLASSIFIER_MODEL=qwen3:0.6b
       - DATABASE_URL=postgresql://travelmind:travelmind123@db:5432/travelmind
     depends_on:
       db:
