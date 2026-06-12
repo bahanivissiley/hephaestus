@@ -1,6 +1,7 @@
 from fastapi import APIRouter
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from app.services.agent import process_message
+from app.services.agent import process_message, process_message_events
 import re
 import json
 
@@ -9,6 +10,9 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 class ChatRequest(BaseModel):
     message: str
     history: list[dict] = []
+    # État du slot-filling : renvoyé par le backend à chaque réponse,
+    # le client le retransmet tel quel à la requête suivante.
+    state: dict = {}
 
 class TimeSlot(BaseModel):
     time: str
@@ -30,6 +34,8 @@ class ChatResponse(BaseModel):
     kb_used: bool
     tools_used: list[str]
     itinerary: list[DayPlan] | None = None
+    state: dict = {}
+    awaiting_info: bool = False
 
 def parse_itinerary(message: str) -> list[DayPlan] | None:
     """
@@ -82,18 +88,51 @@ def parse_itinerary(message: str) -> list[DayPlan] | None:
     
     return days if days else None
 
+@router.post("/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """
+    Endpoint SSE : envoie des événements au fur et à mesure du traitement.
+    Événements : status (étape en cours), token (fragment de réponse),
+    done (résultat final avec itinéraire parsé), error.
+    """
+    async def event_generator():
+        try:
+            async for event in process_message_events(request.message, request.history, request.state):
+                if event["type"] == "done":
+                    itinerary = parse_itinerary(event["message"])
+                    event["itinerary"] = (
+                        [day.model_dump() for day in itinerary] if itinerary else None
+                    )
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            error_event = {"type": "error", "message": f"Une erreur est survenue : {str(e)}"}
+            yield f"data: {json.dumps(error_event, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
 @router.post("", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
-    result = await process_message(request.message, request.history)
-    
+    result = await process_message(request.message, request.history, request.state)
+
     # Parser l'itinéraire depuis le texte
     itinerary = parse_itinerary(result["message"])
-    
+
     return ChatResponse(
         message=result["message"],
         kb_used=result["kb_used"],
         tools_used=result["tools_used"],
-        itinerary=itinerary
+        itinerary=itinerary,
+        state=result["state"],
+        awaiting_info=result["awaiting_info"]
     )
 
 
