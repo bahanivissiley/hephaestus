@@ -1,24 +1,86 @@
 import { useState } from "react"
 
+type StreamEvent =
+  | { type: "status"; message: string }
+  | { type: "token"; content: string }
+  | { type: "done"; message: string; state: Record<string, unknown>; awaiting_info: boolean }
+  | { type: "error"; message: string }
+
+type ChatMsg = { role: "user" | "assistant"; content: string }
+
 function App() {
   const [message, setMessage] = useState("")
-  const [response, setResponse] = useState("")
+  const [messages, setMessages] = useState<ChatMsg[]>([])
+  const [tripState, setTripState] = useState<Record<string, unknown>>({})
+  const [status, setStatus] = useState("")
   const [loading, setLoading] = useState(false)
 
+  const appendAssistantText = (text: string) => {
+    setMessages(prev => {
+      const last = prev[prev.length - 1]
+      if (last?.role === "assistant") {
+        return [...prev.slice(0, -1), { role: "assistant", content: text }]
+      }
+      return [...prev, { role: "assistant", content: text }]
+    })
+  }
+
   const sendMessage = async () => {
-    if (!message.trim()) return
+    if (!message.trim() || loading) return
+    const userMessage = message
+    const historyPayload = messages
+    setMessage("")
+    setMessages(prev => [...prev, { role: "user", content: userMessage }])
     setLoading(true)
+    setStatus("Connexion à l'agent...")
+
     try {
-      const res = await fetch("http://localhost:8000/chat", {
+      const res = await fetch("http://localhost:8000/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history: [] })
+        body: JSON.stringify({ message: userMessage, history: historyPayload, state: tripState })
       })
-      const data = await res.json()
-      setResponse(data.message)
+      if (!res.body) throw new Error("Pas de flux")
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let text = ""
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+
+        // Les événements SSE sont séparés par une ligne vide
+        const parts = buffer.split("\n\n")
+        buffer = parts.pop() ?? ""
+
+        for (const part of parts) {
+          const line = part.trim()
+          if (!line.startsWith("data: ")) continue
+          const event: StreamEvent = JSON.parse(line.slice(6))
+
+          if (event.type === "status") {
+            setStatus(event.message)
+          } else if (event.type === "token") {
+            setStatus("")
+            text += event.content
+            appendAssistantText(text)
+          } else if (event.type === "done") {
+            setStatus("")
+            appendAssistantText(event.message)
+            setTripState(event.state ?? {})
+          } else if (event.type === "error") {
+            setStatus("")
+            appendAssistantText(event.message)
+          }
+        }
+      }
     } catch {
-      setResponse("Erreur de connexion au serveur")
+      appendAssistantText("Erreur de connexion au serveur")
     }
+    setStatus("")
     setLoading(false)
   }
 
@@ -99,10 +161,66 @@ function App() {
         borderRadius: "16px",
         padding: "1.5rem"
       }}>
+        {/* Conversation */}
+        {messages.length > 0 && (
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.75rem",
+            maxHeight: "420px",
+            overflowY: "auto",
+            marginBottom: "1.5rem"
+          }}>
+            {messages.map((m, i) => (
+              <div key={i} style={{
+                alignSelf: m.role === "user" ? "flex-end" : "flex-start",
+                maxWidth: "85%",
+                background: m.role === "user"
+                  ? "linear-gradient(135deg, rgba(56,189,248,0.25), rgba(129,140,248,0.25))"
+                  : "rgba(56,189,248,0.05)",
+                border: m.role === "user"
+                  ? "1px solid rgba(56,189,248,0.35)"
+                  : "1px solid rgba(56,189,248,0.2)",
+                borderRadius: "10px",
+                padding: "0.75rem 1rem",
+                color: "#e2e8f0",
+                fontSize: "0.9rem",
+                lineHeight: "1.7",
+                whiteSpace: "pre-wrap"
+              }}>
+                {m.content}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Status (étape en cours côté agent) */}
+        {status && (
+          <div style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.6rem",
+            color: "#94a3b8",
+            fontSize: "0.85rem",
+            fontStyle: "italic",
+            padding: "0.5rem 0.25rem",
+            marginBottom: "1rem"
+          }}>
+            <span style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: "#38bdf8",
+              animation: "pulse 1.2s ease-in-out infinite"
+            }} />
+            {status}
+          </div>
+        )}
+
+        {/* Input */}
         <div style={{
           display: "flex",
-          gap: "0.75rem",
-          marginBottom: response ? "1.5rem" : "0"
+          gap: "0.75rem"
         }}>
           <input
             value={message}
@@ -138,24 +256,6 @@ function App() {
             {loading ? "⏳ En cours..." : "Planifier →"}
           </button>
         </div>
-
-        {/* Response */}
-        {response && (
-          <div style={{
-            background: "rgba(56,189,248,0.05)",
-            border: "1px solid rgba(56,189,248,0.2)",
-            borderRadius: "10px",
-            padding: "1.25rem",
-            color: "#e2e8f0",
-            fontSize: "0.9rem",
-            lineHeight: "1.7",
-            maxHeight: "400px",
-            overflowY: "auto",
-            whiteSpace: "pre-wrap"
-          }}>
-            {response}
-          </div>
-        )}
       </div>
 
       {/* Footer */}
