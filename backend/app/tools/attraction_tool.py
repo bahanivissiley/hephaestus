@@ -58,6 +58,32 @@ async def attraction_tool(destination: str, category: str = None) -> dict:
         return _fallback(destination, str(e))
 
 
+async def attraction_lookup(name: str) -> dict:
+    """
+    Recherche une attraction précise sur Wikipedia.
+    Utilisée quand l'utilisateur demande un lieu absent de la BD.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get(
+                f"https://fr.wikipedia.org/api/rest_v1/page/summary/{name}",
+                headers={"User-Agent": "TravelMindAI/1.0"}
+            )
+            if response.status_code != 200:
+                return {"name": name, "description": None, "error": f"HTTP {response.status_code}"}
+
+            data = response.json()
+            return {
+                "name": data.get("title", name),
+                "description": data.get("extract", "")[:300],
+                "scraped_at": datetime.utcnow().isoformat(),
+                "source": "Wikipedia",
+                "error": None
+            }
+    except Exception as e:
+        return {"name": name, "description": None, "error": str(e)}
+
+
 def _fallback(destination: str, error: str) -> dict:
     return {
         "destination": destination,
