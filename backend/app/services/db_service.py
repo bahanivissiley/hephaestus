@@ -9,7 +9,8 @@ def search_destination(destination: str) -> dict | None:
     db = get_db_session()
     try:
         result = db.query(Destination).filter(
-            Destination.name.ilike(f"%{destination}%")
+            Destination.name.ilike(f"%{destination}%"),
+            Destination.status == "approved"
         ).first()
         
         if not result:
@@ -42,7 +43,10 @@ def get_hotels(destination_name: str, budget_max: int = None, category: str = No
         if not dest:
             return []
         
-        query = db.query(Hotel).filter(Hotel.destination_id == dest.id)
+        query = db.query(Hotel).filter(
+            Hotel.destination_id == dest.id,
+            Hotel.status == "approved"
+        )
         
         if budget_max:
             query = query.filter(Hotel.price_min <= budget_max)
@@ -78,7 +82,10 @@ def get_attractions(destination_name: str, category: str = None) -> list:
         if not dest:
             return []
         
-        query = db.query(Attraction).filter(Attraction.destination_id == dest.id)
+        query = db.query(Attraction).filter(
+            Attraction.destination_id == dest.id,
+            Attraction.status == "approved"
+        )
         
         if category:
             query = query.filter(Attraction.category == category)
@@ -110,7 +117,10 @@ def get_restaurants(destination_name: str, price_range: str = None) -> list:
         if not dest:
             return []
         
-        query = db.query(Restaurant).filter(Restaurant.destination_id == dest.id)
+        query = db.query(Restaurant).filter(
+            Restaurant.destination_id == dest.id,
+            Restaurant.status == "approved"
+        )
         
         if price_range:
             query = query.filter(Restaurant.price_range == price_range)

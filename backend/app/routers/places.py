@@ -26,7 +26,7 @@ async def list_places(
 
         # Hotels
         if not category or category == "hotel":
-            query = db.query(Hotel)
+            query = db.query(Hotel).filter(Hotel.status == "approved")
             if dest_id:
                 query = query.filter(Hotel.destination_id == dest_id)
             if budget_max:
@@ -53,7 +53,7 @@ async def list_places(
 
         # Attractions
         if not category or category == "attraction":
-            query = db.query(Attraction)
+            query = db.query(Attraction).filter(Attraction.status == "approved")
             if dest_id:
                 query = query.filter(Attraction.destination_id == dest_id)
             attractions = query.order_by(Attraction.rating.desc()).limit(limit).all()
@@ -78,7 +78,7 @@ async def list_places(
 
         # Restaurants
         if not category or category == "restaurant":
-            query = db.query(Restaurant)
+            query = db.query(Restaurant).filter(Restaurant.status == "approved")
             if dest_id:
                 query = query.filter(Restaurant.destination_id == dest_id)
             restaurants = query.order_by(Restaurant.rating.desc()).limit(limit).all()
@@ -103,5 +103,80 @@ async def list_places(
         results.sort(key=lambda x: x.get("rating") or 0, reverse=True)
         return results[:limit]
 
+    finally:
+        db.close()
+
+
+# ─── Modération : lieux découverts par l'agent, en attente de validation ───
+
+MODELS_BY_TYPE = {
+    "destination": Destination,
+    "hotel": Hotel,
+    "attraction": Attraction,
+    "restaurant": Restaurant,
+}
+
+
+@router.get("/pending")
+async def list_pending_places():
+    """Liste tout ce que l'agent a découvert et qui attend une validation."""
+    db = SessionLocal()
+    try:
+        results = []
+        for place_type, model in MODELS_BY_TYPE.items():
+            for p in db.query(model).filter(model.status == "pending").all():
+                entry = {
+                    "id": str(p.id),
+                    "type": place_type,
+                    "name": p.name,
+                    "source": p.source,
+                    "description": p.description,
+                }
+                if place_type != "destination":
+                    dest = db.query(Destination).filter(
+                        Destination.id == p.destination_id
+                    ).first()
+                    entry["destination"] = dest.name if dest else ""
+                results.append(entry)
+        return results
+    finally:
+        db.close()
+
+
+@router.patch("/{place_type}/{place_id}/validate")
+async def validate_place(place_type: str, place_id: str):
+    """Approuve un lieu : il devient visible sur le site et pour l'agent."""
+    model = MODELS_BY_TYPE.get(place_type)
+    if not model:
+        return {"error": f"Type '{place_type}' non supporté"}
+
+    db = SessionLocal()
+    try:
+        place = db.query(model).filter(model.id == place_id).first()
+        if not place:
+            return {"error": "Lieu introuvable"}
+        place.status = "approved"
+        db.commit()
+        return {"id": place_id, "type": place_type, "name": place.name, "status": "approved"}
+    finally:
+        db.close()
+
+
+@router.delete("/{place_type}/{place_id}")
+async def reject_place(place_type: str, place_id: str):
+    """Rejette (supprime) un lieu en attente."""
+    model = MODELS_BY_TYPE.get(place_type)
+    if not model:
+        return {"error": f"Type '{place_type}' non supporté"}
+
+    db = SessionLocal()
+    try:
+        place = db.query(model).filter(model.id == place_id).first()
+        if not place:
+            return {"error": "Lieu introuvable"}
+        name = place.name
+        db.delete(place)
+        db.commit()
+        return {"id": place_id, "type": place_type, "name": name, "deleted": True}
     finally:
         db.close()

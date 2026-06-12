@@ -11,7 +11,7 @@ router = APIRouter(prefix="/destinations", tags=["destinations"])
 async def list_destinations():
     db = get_db_session()
     try:
-        destinations = db.query(Destination).all()
+        destinations = db.query(Destination).filter(Destination.status == "approved").all()
         return [{
             "id": str(d.id),
             "name": d.name,
@@ -33,7 +33,8 @@ async def get_destination(name: str):
     db = get_db_session()
     try:
         dest = db.query(Destination).filter(
-            Destination.name.ilike(f"%{name}%")
+            Destination.name.ilike(f"%{name}%"),
+            Destination.status == "approved"
         ).first()
         if not dest:
             return {"error": f"Destination '{name}' non trouvée"}

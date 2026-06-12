@@ -49,6 +49,10 @@ class Destination(Base):
     latitude = Column(Float)
     longitude = Column(Float)
     created_at = Column(DateTime, default=datetime.utcnow)
+    # Modération : les lieux découverts par l'agent arrivent en "pending"
+    # et ne sont visibles sur le site qu'une fois validés ("approved")
+    status = Column(String(20), nullable=False, default="approved")
+    source = Column(String(50), nullable=False, default="seed")
 
     hotels = relationship("Hotel", back_populates="destination", cascade="all, delete-orphan")
     attractions = relationship("Attraction", back_populates="destination", cascade="all, delete-orphan")
@@ -72,6 +76,8 @@ class Hotel(Base):
     tags = Column(JSON)
     latitude = Column(Float)
     longitude = Column(Float)
+    status = Column(String(20), nullable=False, default="approved")
+    source = Column(String(50), nullable=False, default="seed")
 
     destination = relationship("Destination", back_populates="hotels")
 
@@ -92,6 +98,8 @@ class Attraction(Base):
     rating = Column(Float)
     latitude = Column(Float)
     longitude = Column(Float)
+    status = Column(String(20), nullable=False, default="approved")
+    source = Column(String(50), nullable=False, default="seed")
 
     destination = relationship("Destination", back_populates="attractions")
 
@@ -111,6 +119,8 @@ class Restaurant(Base):
     opening_hours = Column(JSON)
     latitude = Column(Float)
     longitude = Column(Float)
+    status = Column(String(20), nullable=False, default="approved")
+    source = Column(String(50), nullable=False, default="seed")
 
     destination = relationship("Destination", back_populates="restaurants")
 
