@@ -1,11 +1,12 @@
+from dotenv import load_dotenv
+
+# Charger backend/.env avant les imports qui lisent les variables d'environnement
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import health, chat
 from app.database.connection import init_db
 from app.routers import health, chat, destinations, places
-
-
-
 
 app = FastAPI(
     title="TravelMind AI",

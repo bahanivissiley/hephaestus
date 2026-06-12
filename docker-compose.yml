@@ -5,6 +5,8 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+    env_file:
+      - ./backend/.env
     environment:
       - OLLAMA_HOST=http://host.docker.internal:11434
       - DATABASE_URL=postgresql://travelmind:travelmind123@db:5432/travelmind
