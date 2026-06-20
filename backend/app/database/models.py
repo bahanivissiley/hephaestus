@@ -124,6 +124,35 @@ class Restaurant(Base):
 
     destination = relationship("Destination", back_populates="restaurants")
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    conversations = relationship(
+        "Conversation", back_populates="user", cascade="all, delete-orphan"
+    )
+
+
+class Conversation(Base):
+    """Un voyage sauvegardé : messages du chat + carnet + état du slot-filling."""
+    __tablename__ = "conversations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(200), nullable=False, default="Nouveau voyage")
+    messages = Column(JSON, default=list)   # [{role, content}]
+    carnet = Column(JSON, default=dict)     # {destination, places, weather, flights, itinerary}
+    state = Column(JSON, default=dict)      # état trip_state
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="conversations")
+
+
 class Review(Base):
     __tablename__ = "reviews"
 

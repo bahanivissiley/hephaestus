@@ -20,11 +20,14 @@ async def chat(
     format: dict | None = None,
     model: str | None = None,
     num_predict: int = 1024,
+    temperature: float = 0.6,
 ) -> str:
     """
     Appel non-streamé. `format` accepte un JSON Schema : Ollama contraint
     alors la sortie à s'y conformer (utile pour la classification).
     `model` permet d'utiliser un modèle plus léger (ex : classification).
+    `temperature` : 0 pour les tâches déterministes (classification, JSON
+    structuré), plus haut pour la rédaction libre.
     """
     payload = {
         "model": model or MODEL,
@@ -35,8 +38,11 @@ async def chat(
         # (sinon ~20s de rechargement à chaque appel)
         "keep_alive": "2h",
         "options": {
-            "temperature": 0.6,
-            "num_ctx": 4096,
+            "temperature": temperature,
+            # Fenêtre de contexte large : le contexte (BD + outils + historique
+            # + schéma) déborde 4096 et finit tronqué, ce qui fait perdre à
+            # l'agent les contraintes de l'utilisateur (d'où des incohérences).
+            "num_ctx": 8192,
             "num_predict": num_predict,
         }
     }
@@ -70,6 +76,7 @@ async def chat_stream(
     messages: list[dict],
     system: str = "",
     num_predict: int = 1024,
+    temperature: float = 0.6,
 ) -> AsyncGenerator[str, None]:
     """
     Version streaming de chat() : yield les tokens au fur et à mesure
@@ -82,8 +89,8 @@ async def chat_stream(
         "think": False,
         "keep_alive": "2h",
         "options": {
-            "temperature": 0.6,
-            "num_ctx": 4096,
+            "temperature": temperature,
+            "num_ctx": 8192,
             "num_predict": num_predict,
         }
     }

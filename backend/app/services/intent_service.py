@@ -17,27 +17,48 @@ INTENT_SCHEMA = {
             "type": "object",
             "properties": {
                 "destination": {"type": ["string", "null"]},
+                "origine": {"type": ["string", "null"]},
                 "date_depart": {"type": ["string", "null"]},
                 "duree_jours": {"type": ["integer", "null"]},
                 "budget": {"type": ["integer", "null"]},
+                "planning_mode": {"type": ["string", "null"], "enum": ["suggestions", "detailed", None]},
+                "multi_ville": {"type": "boolean"},
                 "preferences": {"type": "array", "items": {"type": "string"}},
                 "attractions": {"type": "array", "items": {"type": "string"}},
             },
-            "required": ["destination", "date_depart", "duree_jours", "budget", "preferences", "attractions"],
+            "required": [
+                "destination", "origine", "date_depart", "duree_jours", "budget",
+                "planning_mode", "multi_ville", "preferences", "attractions",
+            ],
         },
     },
     "required": ["intent", "extracted"],
 }
 
 
-async def classify_intent(message: str, state: dict | None = None) -> dict:
+def _last_assistant_message(history: list[dict] | None) -> str:
+    """Dernier message de l'assistant : c'est la question à laquelle l'utilisateur
+    est probablement en train de répondre, indispensable pour interpréter les
+    réponses courtes (« Lyon », « 3000 »)."""
+    for turn in reversed(history or []):
+        if turn.get("role") == "assistant" and turn.get("content"):
+            return turn["content"]
+    return "aucune (début de conversation)"
+
+
+async def classify_intent(
+    message: str,
+    state: dict | None = None,
+    history: list[dict] | None = None,
+) -> dict:
     """
     Classifie l'intention du message et extrait les slots voyage qu'il contient.
-    L'état courant est fourni au LLM pour qu'il comprenne les réponses courtes
-    ("3000€", "en avril") comme des informations de voyage.
+    L'état courant ET la dernière question de l'assistant sont fournis au LLM
+    pour qu'il rattache une réponse courte ("3000€", "Lyon") au bon slot.
     """
     prompt = INTENT_CLASSIFIER_PROMPT.format(
         state=state_summary(state or new_state()),
+        last_question=_last_assistant_message(history),
         message=message,
     )
 
@@ -47,6 +68,9 @@ async def classify_intent(message: str, state: dict | None = None) -> dict:
             format=INTENT_SCHEMA,
             model=CLASSIFIER_MODEL,
             num_predict=300,
+            # Classification/extraction : déterministe pour rester cohérent
+            # d'un message à l'autre (sinon l'intent et les slots varient).
+            temperature=0.0,
         )
         return json.loads(response)
 
@@ -57,9 +81,12 @@ async def classify_intent(message: str, state: dict | None = None) -> dict:
             "intent": "travel",
             "extracted": {
                 "destination": None,
+                "origine": None,
                 "date_depart": None,
                 "duree_jours": None,
                 "budget": None,
+                "planning_mode": None,
+                "multi_ville": False,
                 "preferences": [],
                 "attractions": [],
             },

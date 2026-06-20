@@ -8,20 +8,32 @@ le frontend le renvoie tel quel à la requête suivante.
 # Slots obligatoires avant de lancer une planification (clé → libellé humain)
 REQUIRED_SLOTS = [
     ("destination", "la destination"),
+    ("origine", "la ville de départ"),
     ("date_depart", "la date de départ"),
     ("duree_jours", "la durée du séjour"),
     ("budget", "le budget total approximatif"),
 ]
 
-SLOT_KEYS = ["destination", "date_depart", "duree_jours", "budget", "preferences", "attractions"]
+# Clés scalaires (chaîne/entier) qui écrasent quand une nouvelle valeur arrive.
+SCALAR_KEYS = ["destination", "origine", "date_depart", "duree_jours", "budget", "planning_mode"]
+# Clés listes qui s'accumulent sans doublon.
+LIST_KEYS = ["preferences", "attractions"]
+SLOT_KEYS = SCALAR_KEYS + LIST_KEYS + ["multi_ville"]
 
 
 def new_state() -> dict:
     return {
         "destination": None,
+        "origine": None,
         "date_depart": None,
         "duree_jours": None,
         "budget": None,
+        # "suggestions" (lieux + budget) ou "detailed" (planning heure par heure).
+        # None = pas encore choisi → l'agent pose la question.
+        "planning_mode": None,
+        # True si la destination est un pays / plusieurs villes, ou si l'utilisateur
+        # demande explicitement plusieurs hébergements.
+        "multi_ville": False,
         "preferences": [],
         "attractions": [],
     }
@@ -39,12 +51,16 @@ def merge_state(state: dict | None, extracted: dict | None) -> dict:
             merged[key] = state[key]
 
     extracted = extracted or {}
-    for key in ["destination", "date_depart", "duree_jours", "budget"]:
+    for key in SCALAR_KEYS:
         value = extracted.get(key)
         if value:
             merged[key] = value
 
-    for key in ["preferences", "attractions"]:
+    # Booléen : une fois vrai, on le garde (mono-ville reste le défaut).
+    if extracted.get("multi_ville"):
+        merged["multi_ville"] = True
+
+    for key in LIST_KEYS:
         new_items = extracted.get(key) or []
         if isinstance(new_items, str):
             new_items = [new_items]
@@ -69,6 +85,7 @@ def state_summary(state: dict) -> str:
 
     return (
         f"- Destination : {fmt(state.get('destination'))}\n"
+        f"- Ville de départ : {fmt(state.get('origine'))}\n"
         f"- Date de départ : {fmt(state.get('date_depart'))}\n"
         f"- Durée : {fmt(state.get('duree_jours'), ' jours')}\n"
         f"- Budget : {fmt(state.get('budget'), '€')}\n"

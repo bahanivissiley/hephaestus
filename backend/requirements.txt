@@ -26,3 +26,10 @@ mypy==1.10.0
 sqlalchemy==2.0.30
 alembic==1.13.1
 psycopg2-binary==2.9.9
+
+# Auth (JWT + hachage des mots de passe)
+passlib[bcrypt]==1.7.4
+# bcrypt épinglé : passlib 1.7.4 casse la détection de version avec bcrypt>=4.1
+bcrypt==4.0.1
+python-jose[cryptography]==3.3.0
+email-validator==2.1.1

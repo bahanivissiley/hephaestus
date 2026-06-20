@@ -2,7 +2,6 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.services.agent import process_message, process_message_events
-import re
 import json
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -37,57 +36,6 @@ class ChatResponse(BaseModel):
     state: dict = {}
     awaiting_info: bool = False
 
-def parse_itinerary(message: str) -> list[DayPlan] | None:
-    """
-    Parse le texte markdown de l'agent pour extraire un itinéraire structuré.
-    """
-    days = []
-    
-    # Chercher les blocs Jour X
-    day_pattern = re.compile(r'###?\s*\**Jour\s*(\d+)\s*[:\-–]?\s*([^\n*]+)\**', re.IGNORECASE)
-    matches = list(day_pattern.finditer(message))
-    
-    if not matches:
-        return None
-    
-    for i, match in enumerate(matches):
-        day_num = int(match.group(1))
-        theme = match.group(2).strip().rstrip('*').strip()
-        
-        # Extraire le texte de ce jour
-        start = match.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(message)
-        day_text = message[start:end]
-        
-        slots = []
-        
-        # Chercher les horaires dans le texte du jour
-        time_pattern = re.compile(r'(\d{1,2}h\d{0,2}|\d{1,2}:\d{2})')
-        place_pattern = re.compile(r'\*\*([^*]+)\*\*')
-        
-        times = time_pattern.findall(day_text)
-        places = place_pattern.findall(day_text)
-        
-        # Créer des slots basiques
-        if places:
-            for j, place in enumerate(places[:3]):
-                time = times[j] if j < len(times) else f"{9 + j*3}h00"
-                slots.append(TimeSlot(
-                    time=time,
-                    duration_min=90,
-                    place_name=place,
-                    place_type="attraction",
-                    status="pending"
-                ))
-        
-        days.append(DayPlan(
-            day=day_num,
-            theme=theme,
-            slots=slots
-        ))
-    
-    return days if days else None
-
 @router.post("/stream")
 async def chat_stream_endpoint(request: ChatRequest):
     """
@@ -98,11 +46,6 @@ async def chat_stream_endpoint(request: ChatRequest):
     async def event_generator():
         try:
             async for event in process_message_events(request.message, request.history, request.state):
-                if event["type"] == "done":
-                    itinerary = parse_itinerary(event["message"])
-                    event["itinerary"] = (
-                        [day.model_dump() for day in itinerary] if itinerary else None
-                    )
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             error_event = {"type": "error", "message": f"Une erreur est survenue : {str(e)}"}
@@ -123,14 +66,11 @@ async def chat_stream_endpoint(request: ChatRequest):
 async def chat_endpoint(request: ChatRequest):
     result = await process_message(request.message, request.history, request.state)
 
-    # Parser l'itinéraire depuis le texte
-    itinerary = parse_itinerary(result["message"])
-
     return ChatResponse(
         message=result["message"],
         kb_used=result["kb_used"],
         tools_used=result["tools_used"],
-        itinerary=itinerary,
+        itinerary=result.get("itinerary"),
         state=result["state"],
         awaiting_info=result["awaiting_info"]
     )
@@ -144,33 +84,78 @@ class AlternativeRequest(BaseModel):
 
 @router.post("/alternative")
 async def get_alternative(request: AlternativeRequest):
+    """
+    Propose une alternative à un lieu : BD d'abord, puis sources externes
+    si la BD ne contient pas d'autre option (hôtels via Booking, attraction
+    via Wikipedia). Les restaurants restent limités à la BD (pas de faux).
+    """
     from app.services.db_service import get_hotels, get_attractions, get_restaurants
-    
+
+    def _db_alternatives(places: list) -> list:
+        return [p for p in places if p["name"] != request.current_place]
+
+    # 1. Tenter la BD
     if request.place_type == "hotel":
-        places = get_hotels(request.destination, budget_max=request.budget_max)
-        alternatives = [p for p in places if p["name"] != request.current_place]
-    
+        db_alts = _db_alternatives(get_hotels(request.destination, budget_max=request.budget_max))
     elif request.place_type == "attraction":
-        places = get_attractions(request.destination)
-        alternatives = [p for p in places if p["name"] != request.current_place]
-    
+        db_alts = _db_alternatives(get_attractions(request.destination))
     elif request.place_type == "restaurant":
-        places = get_restaurants(request.destination)
-        alternatives = [p for p in places if p["name"] != request.current_place]
-    
+        db_alts = _db_alternatives(get_restaurants(request.destination))
     else:
         return {"error": "Type non supporté", "alternative": None}
-    
-    if not alternatives:
+
+    if db_alts:
+        best = db_alts[0]
         return {
-            "alternative": None,
+            "alternative": best,
             "place_type": request.place_type,
-            "message": f"Aucune alternative disponible pour {request.current_place}"
+            "source": "database",
+            "message": f"Alternative proposée : {best['name']}",
         }
-    
-    best = alternatives[0]
+
+    # 2. Fallback externe (la BD est sèche)
+    if request.place_type == "hotel":
+        from app.tools.hotel_tool import hotel_search_tool
+        result = await hotel_search_tool(request.destination, budget_max=request.budget_max)
+        candidates = [h for h in result.get("hotels", []) if h["name"] != request.current_place]
+        if candidates:
+            h = candidates[0]
+            return {
+                "alternative": {
+                    "name": h["name"],
+                    "image_url": h.get("image_url"),
+                    "category": "Hôtel",
+                    # Le front attend price_min/price_max pour les hôtels
+                    "price_min": h.get("price_per_night"),
+                    "price_max": h.get("price_per_night"),
+                    "rating": h.get("rating"),
+                },
+                "place_type": "hotel",
+                "source": "booking",
+                "message": f"Alternative proposée : {h['name']}",
+            }
+
+    elif request.place_type == "attraction":
+        from app.tools.attraction_tool import attraction_lookup
+        result = await attraction_lookup(request.current_place)
+        # Wikipedia renvoie des infos sur un autre lieu ? On propose une découverte
+        # générique de la destination si rien d'exploitable.
+        if not result.get("error") and result.get("name"):
+            return {
+                "alternative": {
+                    "name": result["name"],
+                    "image_url": result.get("image_url"),
+                    "category": "attraction",
+                    "price": "",
+                    "rating": None,
+                },
+                "place_type": "attraction",
+                "source": "wikipedia",
+                "message": f"Alternative proposée : {result['name']}",
+            }
+
     return {
-        "alternative": best,
+        "alternative": None,
         "place_type": request.place_type,
-        "message": f"Alternative proposée : {best['name']}"
+        "message": f"Aucune alternative disponible pour {request.current_place}",
     }
