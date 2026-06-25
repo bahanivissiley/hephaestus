@@ -90,9 +90,26 @@ async def get_alternative(request: AlternativeRequest):
     via Wikipedia). Les restaurants restent limités à la BD (pas de faux).
     """
     from app.services.db_service import get_hotels, get_attractions, get_restaurants
+    from app.tools.price_utils import (
+        euros_from_text,
+        tier_to_eur,
+        estimate_attraction_eur,
+        MEAL_DEFAULT_EUR,
+    )
 
     def _db_alternatives(places: list) -> list:
         return [p for p in places if p["name"] != request.current_place]
+
+    def _alt_cost(place: dict) -> int | None:
+        """Coût € de l'alternative, pour recalculer le budget côté carnet.
+        Hôtel : None (chiffré via le prix/nuit de la carte)."""
+        if request.place_type == "attraction":
+            known = euros_from_text(place.get("price"))
+            return known if known is not None else estimate_attraction_eur(place.get("category"))
+        if request.place_type == "restaurant":
+            known = tier_to_eur(place.get("price_range"))
+            return known if known is not None else MEAL_DEFAULT_EUR
+        return None
 
     # 1. Tenter la BD
     if request.place_type == "hotel":
@@ -105,7 +122,7 @@ async def get_alternative(request: AlternativeRequest):
         return {"error": "Type non supporté", "alternative": None}
 
     if db_alts:
-        best = db_alts[0]
+        best = {**db_alts[0], "cost_eur": _alt_cost(db_alts[0])}
         return {
             "alternative": best,
             "place_type": request.place_type,
@@ -129,6 +146,7 @@ async def get_alternative(request: AlternativeRequest):
                     "price_min": h.get("price_per_night"),
                     "price_max": h.get("price_per_night"),
                     "rating": h.get("rating"),
+                    "cost_eur": None,
                 },
                 "place_type": "hotel",
                 "source": "booking",
@@ -148,6 +166,7 @@ async def get_alternative(request: AlternativeRequest):
                     "category": "attraction",
                     "price": "",
                     "rating": None,
+                    "cost_eur": result["price_eur"] if result.get("price_eur") is not None else estimate_attraction_eur(None),
                 },
                 "place_type": "attraction",
                 "source": "wikipedia",

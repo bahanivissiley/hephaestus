@@ -3,10 +3,13 @@ from dotenv import load_dotenv
 # Charger backend/.env avant les imports qui lisent les variables d'environnement
 load_dotenv()
 
+import asyncio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database.connection import init_db
 from app.routers import health, chat, destinations, places, auth, conversations
+from app.services.ollama_client import warm_up_models
 
 app = FastAPI(
     title="TravelMind AI",
@@ -32,6 +35,14 @@ app.include_router(places.router)
 @app.get("/")
 async def root():
     return {"message": "TravelMind AI is running 🚀"}
+
+
+@app.on_event("startup")
+async def _warm_up_ollama():
+    # En tâche de fond : l'API sert immédiatement pendant que les modèles
+    # (principal + classifieur) se chargent en mémoire, ce qui évite ~20s de
+    # froid au tout premier message utilisateur.
+    asyncio.create_task(warm_up_models())
 
 
 init_db()

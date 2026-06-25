@@ -666,7 +666,7 @@ h2.display { font-size: clamp(2rem, 4vw, 3.1rem); }
 /* ---------- Atelier de planification (page chat) ---------- */
 .workshop {
   display: grid;
-  grid-template-columns: 1fr 430px;
+  grid-template-columns: 1fr 480px;
   /* minmax(0, 1fr) : contraint la rangée à la hauteur du conteneur,
      sinon les colonnes grandissent avec le contenu et le scroll meurt */
   grid-template-rows: minmax(0, 1fr);
@@ -926,6 +926,9 @@ h2.display { font-size: clamp(2rem, 4vw, 3.1rem); }
   display: flex;
   flex-direction: column;
 }
+.pcard-link { cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease; }
+.pcard-link:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18); }
+.pcard-link:focus-visible { outline: 2px solid var(--ember); outline-offset: 2px; }
 .pcard-img { height: 96px; background: var(--paper-2); }
 .pcard-img img { width: 100%; height: 100%; object-fit: cover; }
 .pcard-body {
@@ -1018,6 +1021,96 @@ h2.display { font-size: clamp(2rem, 4vw, 3.1rem); }
   background: var(--ember);
 }
 .tl-slot .time { color: var(--bone-soft); flex-shrink: 0; min-width: 3.1rem; }
+
+/* Préférences (formulaire cliquable dans le chat) */
+.prefs-form { display: flex; flex-direction: column; gap: 0.5rem; margin: 0.5rem 0 0.2rem; }
+.prefs-label { font-size: 0.82rem; color: var(--bone-soft); margin: 0; }
+.prefs-chips { display: flex; flex-wrap: wrap; gap: 0.45rem; }
+.pill.active {
+  background: var(--forest);
+  color: var(--bone);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* Itinéraire en cards */
+.itin { display: flex; flex-direction: column; gap: 1.15rem; }
+.itin-day-name {
+  font-family: var(--font-display);
+  font-weight: 640;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.55rem;
+}
+.itin-cards { display: flex; flex-direction: column; gap: 0.6rem; }
+.itin-card {
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: var(--r-card);
+  padding: 0.7rem 0.85rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.itin-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+.itin-period {
+  font-weight: 700;
+  color: var(--ember-btn);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.7rem;
+}
+.itin-time { font-variant-numeric: tabular-nums; }
+.itin-dur { display: inline-flex; align-items: center; gap: 0.2rem; }
+.itin-actions { margin-left: auto; display: inline-flex; gap: 0.1rem; }
+.itin-act {
+  border: none;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 6px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.itin-act:hover { background: var(--paper-2); color: var(--ink); }
+.itin-title {
+  font-family: var(--font-display);
+  font-weight: 640;
+  font-size: 0.95rem;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+.itin-place {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.itin-desc { font-size: 0.82rem; color: var(--ink-soft); line-height: 1.4; }
+.itin-cost { align-self: flex-start; font-weight: 600; font-size: 0.82rem; }
+.itin-step {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--ember-btn);
+  margin: 0.5rem 0 0.1rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--line-dark, rgba(241,244,234,0.18));
+}
+.itin > .itin-step:first-child { border-top: none; padding-top: 0; margin-top: 0; }
 
 /* Bouton carnet (mobile) et bascule */
 .carnet-toggle { display: none; }
@@ -1329,4 +1422,11 @@ h2.display { font-size: clamp(2rem, 4vw, 3.1rem); }
   inset: 68px 0 0 0;
   z-index: calc(var(--z-overlay) - 1);
   background: rgba(18, 43, 29, 0.35);
+}
+
+.planning-choices {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0;
 }
