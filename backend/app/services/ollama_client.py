@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import json
 import os
@@ -21,6 +22,7 @@ async def chat(
     model: str | None = None,
     num_predict: int = 1024,
     temperature: float = 0.6,
+    num_ctx: int = 8192,
 ) -> str:
     """
     Appel non-streamé. `format` accepte un JSON Schema : Ollama contraint
@@ -28,6 +30,10 @@ async def chat(
     `model` permet d'utiliser un modèle plus léger (ex : classification).
     `temperature` : 0 pour les tâches déterministes (classification, JSON
     structuré), plus haut pour la rédaction libre.
+    `num_ctx` : taille de la fenêtre de contexte. 8192 par défaut (planification
+    avec BD + outils + historique + schéma), mais les appels légers
+    (classification, questions courtes) passent une valeur plus petite pour
+    allouer moins de cache KV et réduire la pression mémoire (moins de swap).
     """
     payload = {
         "model": model or MODEL,
@@ -39,10 +45,7 @@ async def chat(
         "keep_alive": "2h",
         "options": {
             "temperature": temperature,
-            # Fenêtre de contexte large : le contexte (BD + outils + historique
-            # + schéma) déborde 4096 et finit tronqué, ce qui fait perdre à
-            # l'agent les contraintes de l'utilisateur (d'où des incohérences).
-            "num_ctx": 8192,
+            "num_ctx": num_ctx,
             "num_predict": num_predict,
         }
     }
@@ -77,10 +80,13 @@ async def chat_stream(
     system: str = "",
     num_predict: int = 1024,
     temperature: float = 0.6,
+    num_ctx: int = 8192,
 ) -> AsyncGenerator[str, None]:
     """
     Version streaming de chat() : yield les tokens au fur et à mesure
     que Ollama les génère (NDJSON, une ligne JSON par chunk).
+    `num_ctx` : voir chat(). 8192 pour la planification, plus petit pour les
+    questions courtes (slot-filling, choix du mode).
     """
     payload = {
         "model": MODEL,
@@ -90,7 +96,7 @@ async def chat_stream(
         "keep_alive": "2h",
         "options": {
             "temperature": temperature,
-            "num_ctx": 8192,
+            "num_ctx": num_ctx,
             "num_predict": num_predict,
         }
     }
@@ -149,5 +155,39 @@ def truncate_history(history: list[dict], max_tokens: int = 1500) -> list[dict]:
     # Supprimer les messages les plus anciens jusqu'à rentrer dans le contexte
     while len(recent_messages) > 2 and estimate_tokens([first_message] + recent_messages) > max_tokens:
         recent_messages = recent_messages[2:]  # Supprimer par paire user/assistant
-    
+
     return [first_message] + recent_messages
+
+
+async def _load_model(model: str) -> None:
+    """
+    Charge un modèle en mémoire via une requête minimale (num_predict=1).
+    best-effort : Ollama peut être éteint au démarrage, on n'échoue jamais.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            await client.post(
+                f"{OLLAMA_HOST}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": "ok"}],
+                    "stream": False,
+                    "think": False,
+                    "keep_alive": "2h",
+                    "options": {"num_predict": 1, "num_ctx": 2048},
+                },
+            )
+    except Exception:
+        pass
+
+
+async def warm_up_models() -> None:
+    """
+    Pré-charge en parallèle le modèle principal et le classifieur pour éviter
+    le démarrage à froid (~20s par modèle) au premier message utilisateur.
+    """
+    models = {MODEL}
+    classifier = os.getenv("OLLAMA_CLASSIFIER_MODEL")
+    if classifier:
+        models.add(classifier)
+    await asyncio.gather(*(_load_model(m) for m in models))

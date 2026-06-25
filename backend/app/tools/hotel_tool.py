@@ -9,27 +9,56 @@ HEADERS = {
     "x-rapidapi-key": RAPIDAPI_KEY
 }
 
-async def get_dest_id(destination: str) -> str | None:
-    """Récupère le dest_id Booking pour une ville."""
+def _norm_city(text: str | None) -> str:
+    """Minuscules, sans accents/ponctuation, pour comparer deux noms de ville."""
+    import unicodedata, re
+    s = unicodedata.normalize("NFKD", (text or "").lower())
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", " ", s).strip()
+
+
+async def resolve_city(destination: str) -> dict | None:
+    """
+    Résout une ville Booking de façon FIABLE (sinon None → on n'invente pas).
+
+    On interroge l'autocomplétion en locale `fr` (les noms saisis sont en français),
+    on ne garde que les résultats de type ville, et on prend celui qui a le PLUS
+    d'hôtels (le plus pertinent). Renvoie dest_id + libellé + pays canoniques, ou
+    None si aucune vraie ville ne correspond (résolution ambiguë → pas d'hôtel).
+    """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(
                 "https://booking-com.p.rapidapi.com/v1/hotels/locations",
-                params={"locale": "en-gb", "name": destination},
-                headers=HEADERS
+                params={"locale": "fr", "name": destination},
+                headers=HEADERS,
             )
             data = response.json()
-            
-            # Chercher le premier résultat de type "city"
-            for item in data:
-                if item.get("dest_type") == "city" or item.get("type") == "ci":
-                    return str(item.get("dest_id"))
-            
-            # Sinon prendre le premier résultat
-            if data:
-                return str(data[0].get("dest_id"))
-            
+        if not isinstance(data, list) or not data:
             return None
+
+        cities = [
+            d for d in data
+            if d.get("dest_type") == "city" or d.get("type") == "ci"
+        ]
+        if not cities:
+            return None
+
+        # Le meilleur candidat = la ville avec le plus d'hôtels. À nombre d'hôtels
+        # égal, on privilégie une correspondance exacte du nom.
+        target = _norm_city(destination)
+        best = max(
+            cities,
+            key=lambda d: (
+                (d.get("nr_hotels") or 0),
+                _norm_city(d.get("name") or d.get("city")) == target,
+            ),
+        )
+        return {
+            "dest_id": str(best.get("dest_id")),
+            "city": best.get("name") or best.get("city") or destination,
+            "country": best.get("country"),
+        }
     except Exception:
         return None
 
@@ -51,12 +80,14 @@ async def hotel_search_tool(
         if not checkout:
             checkout = (datetime.now() + timedelta(days=32)).strftime("%Y-%m-%d")
 
-        # Étape 1 — Récupérer le dest_id
-        dest_id = await get_dest_id(destination)
-        if not dest_id:
-            return _no_data(destination, f"Ville '{destination}' non trouvée")
+        # Étape 1 — Résoudre la ville de façon fiable (sinon on s'arrête : pas de faux).
+        city = await resolve_city(destination)
+        if not city:
+            return _no_data(destination, f"Ville '{destination}' non résolue de façon fiable")
+        dest_id = city["dest_id"]
+        city_norm = _norm_city(city["city"])
 
-        # Étape 2 — Rechercher les hôtels
+        # Étape 2 — Rechercher les hôtels DANS la ville (pas les environs).
         async with httpx.AsyncClient(timeout=15.0) as client:
             params = {
                 "dest_id": dest_id,
@@ -70,7 +101,7 @@ async def hotel_search_tool(
                 "filter_by_currency": "EUR",
                 "page_number": 0,
                 "units": "metric",
-                "include_adjacency": "true"
+                "include_adjacency": "false"
             }
 
             response = await client.get(
@@ -86,7 +117,13 @@ async def hotel_search_tool(
                 return _no_data(destination, "Aucun hôtel trouvé")
 
             hotels = []
-            for h in results[:6]:
+            for h in results[:8]:
+                # Cohérence ville : on écarte un hôtel dont la ville Booking ne
+                # correspond pas à la ville résolue (évite les résultats hors sujet).
+                h_city = _norm_city(h.get("city"))
+                if h_city and city_norm and h_city != city_norm and city_norm not in h_city:
+                    continue
+
                 # Prix brut — peut être en devise locale
                 raw_price = h.get("min_total_price") or 0
                 currency = h.get("currency_code", "EUR")

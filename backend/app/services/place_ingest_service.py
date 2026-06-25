@@ -9,9 +9,19 @@ from app.database.models import (
     Destination,
     Hotel,
     Attraction,
+    Restaurant,
     HotelCategory,
     AttractionCategory,
+    PriceRange,
 )
+
+
+def _price_range_enum(tag: str | None) -> PriceRange | None:
+    """Convertit un palier texte (« €€ », « $$ - $$$ ») en enum PriceRange."""
+    if not tag:
+        return None
+    count = max(tag.count("€"), tag.count("$"))
+    return {1: PriceRange.cheap, 2: PriceRange.mid, 3: PriceRange.expensive}.get(min(count, 3))
 
 
 def _get_or_create_destination(db, name: str, description: str | None = None) -> Destination:
@@ -92,6 +102,46 @@ def save_pending_hotels(destination_name: str, hotels: list[dict]) -> int:
                 tags=["découvert par l'agent"],
                 status="pending",
                 source="booking_api",
+            ))
+            saved += 1
+        db.commit()
+        return saved
+    except Exception:
+        db.rollback()
+        return 0
+    finally:
+        db.close()
+
+
+def save_pending_restaurants(destination_name: str, restaurants: list[dict]) -> int:
+    """Enregistre les restaurants venus de TripAdvisor (dédupliqués par nom)."""
+    db = SessionLocal()
+    saved = 0
+    try:
+        dest = _get_or_create_destination(db, destination_name)
+        for r in restaurants:
+            name = (r.get("name") or "").strip()
+            if not name:
+                continue
+            exists = db.query(Restaurant).filter(
+                Restaurant.destination_id == dest.id,
+                Restaurant.name.ilike(name),
+            ).first()
+            if exists:
+                continue
+
+            db.add(Restaurant(
+                destination_id=dest.id,
+                name=name[:200],
+                cuisine=(r.get("cuisine") or "")[:100],
+                price_range=_price_range_enum(r.get("price_range")),
+                rating=r.get("rating"),
+                description=r.get("description"),
+                image_url=r.get("image_url"),
+                location=(r.get("location") or "")[:100],
+                tags=["découvert par l'agent"],
+                status="pending",
+                source="tripadvisor",
             ))
             saved += 1
         db.commit()
